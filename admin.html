@@ -3,165 +3,262 @@
 <head>
 <meta charset="UTF-8">
 <title>Admin – Reservations</title>
-
 <style>
-body {
-    font-family: Arial, sans-serif;
-    background: #f4f4f4;
-    margin: 0;
-    padding: 0;
-}
-
-h1 {
-    text-align: center;
-    margin-top: 20px;
-}
+body { font-family: Arial; padding:20px; background:#f4f4f4; }
+h1 { text-align:center; }
 
 #passwordScreen {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    height: 100vh;
-    background: #111;
-    color: white;
+    position:fixed;
+    top:0; left:0; width:100%; height:100%;
+    display:flex; flex-direction:column; justify-content:center; align-items:center;
+    background:#111; color:white; z-index:1000;
 }
 
-#passwordScreen input {
-    padding: 10px;
-    font-size: 16px;
-    margin-top: 10px;
+#passwordScreen input { padding:10px; font-size:16px; margin-top:10px; }
+#passwordScreen button { margin-top:10px; padding:10px 20px; cursor:pointer; }
+
+#calendar-nav { text-align:center; margin-bottom:10px; }
+#calendar-days {
+  display:grid;
+  grid-template-columns:repeat(7,1fr);
+  max-width:420px;
+  margin:0 auto;
+  font-weight:bold;
+  text-align:center;
+}
+#calendar {
+  display:grid;
+  grid-template-columns:repeat(7,1fr);
+  max-width:420px;
+  margin:0 auto;
+  gap:5px;
 }
 
-#passwordScreen button {
-    margin-top: 10px;
-    padding: 10px 20px;
-    font-size: 16px;
-    cursor: pointer;
+.day {
+  aspect-ratio:1/1;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  border-radius:5px;
+  color:white;
+  font-weight:bold;
 }
 
-#adminContent {
-    display: none;
-    padding: 20px;
-}
+.day.free { background:#4CAF50; }
+.day.pending { background:#FF9800; }
+.day.confirmed { background:#f44336; cursor:pointer; }
 
 table {
-    width: 100%;
-    border-collapse: collapse;
-    background: white;
-    margin-top: 20px;
+  width:100%;
+  border-collapse: collapse;
+  margin-top:20px;
 }
-
 th, td {
-    padding: 10px;
-    border: 1px solid #ccc;
-    text-align: center;
+  border:1px solid #ccc;
+  padding:6px;
+  text-align:center;
 }
+th { background:#eee; }
 
-button {
-    padding: 5px 10px;
-    cursor: pointer;
-}
+button { padding:4px 8px; margin:2px; }
+textarea { width:95%; resize:none; }
 
-.accept {
-    background: green;
-    color: white;
-    border: none;
-}
-
-.cancel {
-    background: red;
-    color: white;
-    border: none;
-}
+#adminApp { display:none; }
 </style>
 </head>
-
 <body>
 
 <!-- 🔐 PASSWORD SCREEN -->
 <div id="passwordScreen">
-    <h2>Admin Access</h2>
-    <input type="password" id="passwordInput" placeholder="Enter password">
-    <button onclick="checkPassword()">Login</button>
-    <p id="error" style="color:red;"></p>
+  <h2>Admin Access</h2>
+  <input type="password" id="passwordInput" placeholder="Enter password">
+  <button onclick="unlock()">Login</button>
+  <p id="error" style="color:red;"></p>
 </div>
 
-<!-- ✅ ADMIN CONTENT -->
-<div id="adminContent">
-    <h1>Reservations – Admin</h1>
+<!-- ✅ ADMIN APP (tout ton code inchangé) -->
+<div id="adminApp">
 
-    <table>
-        <thead>
-            <tr>
-                <th>Client</th>
-                <th>Type</th>
-                <th>Dates</th>
-                <th>Details</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody id="reservationTable"></tbody>
-    </table>
+<h1>Admin Reservation Management</h1>
+
+<div id="calendar-nav">
+  <button id="prev-month">&lt; Previous</button>
+  <span id="month-label"></span>
+  <button id="next-month">Next &gt;</button>
 </div>
+
+<div id="calendar-days">
+  <div>Mon</div><div>Tue</div><div>Wed</div>
+  <div>Thu</div><div>Fri</div><div>Sat</div><div>Sun</div>
+</div>
+
+<div id="calendar"></div>
+
+<h2>Pending Reservations</h2>
+<table>
+  <thead>
+    <tr><th>Client</th><th>Days</th><th>Type</th><th>Details</th><th>Action</th></tr>
+  </thead>
+  <tbody id="pending-table"></tbody>
+</table>
+
+<h2>Confirmed Reservations</h2>
+<table>
+  <thead>
+    <tr><th>Client</th><th>Days</th><th>Type</th><th>Details</th><th>Calendar</th><th>Cancel</th></tr>
+  </thead>
+  <tbody id="confirmed-table"></tbody>
+</table>
 
 <script>
-/* ===============================
-   PASSWORD PROTECTION
-================================ */
-const ADMIN_PASSWORD = "admin123"; // 🔴 CHANGE THIS
+/* ===== MOT DE PASSE ===== */
+const ADMIN_PASSWORD = "admin123"; // 🔴 change ici si tu veux
 
-function checkPassword() {
-    const input = document.getElementById("passwordInput").value;
-    if (input === ADMIN_PASSWORD) {
-        document.getElementById("passwordScreen").style.display = "none";
-        document.getElementById("adminContent").style.display = "block";
-        loadReservations();
-    } else {
-        document.getElementById("error").textContent = "Wrong password";
+function unlock() {
+  const val = document.getElementById("passwordInput").value;
+  if(val === ADMIN_PASSWORD){
+    document.getElementById("passwordScreen").style.display = "none";
+    document.getElementById("adminApp").style.display = "block";
+    updateAll(); // initialisation calendrier et tableaux
+  } else {
+    document.getElementById("error").innerText = "Wrong password";
+  }
+}
+
+/* ===== TON CODE EXISTANT ===== */
+let pending = JSON.parse(localStorage.getItem("pendingReservations") || "[]");
+let confirmed = JSON.parse(localStorage.getItem("confirmedReservations") || "[]");
+let currentDate = new Date();
+
+const calendarEl = document.getElementById("calendar");
+const monthLabel = document.getElementById("month-label");
+const pendingTable = document.getElementById("pending-table");
+const confirmedTable = document.getElementById("confirmed-table");
+
+function renderCalendar(){
+  calendarEl.innerHTML = "";
+  const year = currentDate.getFullYear();
+  const month = currentDate.getMonth();
+  monthLabel.textContent = currentDate.toLocaleString("default",{month:"long",year:"numeric"});
+
+  const numDays = new Date(year, month+1, 0).getDate();
+  const firstDay = new Date(year, month, 1).getDay();
+  const offset = firstDay === 0 ? 6 : firstDay - 1;
+
+  const statusByDate = {};
+  confirmed.forEach(r => r.days.forEach(d => statusByDate[d] = "confirmed"));
+  pending.forEach(r => r.days.forEach(d => { if(!statusByDate[d]) statusByDate[d] = "pending"; }));
+
+  for(let i=0;i<offset;i++){ calendarEl.appendChild(document.createElement("div")); }
+
+  for(let d=1; d<=numDays; d++){
+    const dateStr = `${year}-${String(month+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+    const div = document.createElement("div");
+    div.textContent = d;
+    div.className = "day " + (statusByDate[dateStr] || "free");
+
+    if(statusByDate[dateStr] === "confirmed"){
+      div.onclick = () => { if(confirm(`Cancel this day?\n${dateStr}`)){ cancelSingleDay(dateStr); } }
     }
+
+    calendarEl.appendChild(div);
+  }
 }
 
-/* ===============================
-   RESERVATIONS LOGIC
-================================ */
-function loadReservations() {
-    const reservations = JSON.parse(localStorage.getItem("reservations")) || [];
-    const table = document.getElementById("reservationTable");
-    table.innerHTML = "";
-
-    reservations.forEach((res, index) => {
-        const row = document.createElement("tr");
-
-        row.innerHTML = `
-            <td>${res.name}</td>
-            <td>${res.type}</td>
-            <td>${res.days.join(", ")}</td>
-            <td>${res.details || ""}</td>
-            <td>
-                <button class="accept" onclick="acceptReservation(${index})">Accept</button>
-                <button class="cancel" onclick="cancelReservation(${index})">Cancel</button>
-            </td>
-        `;
-
-        table.appendChild(row);
-    });
+function cancelSingleDay(dateStr){
+  confirmed = confirmed
+    .map(r => ({...r, days: r.days.filter(d => d !== dateStr)}))
+    .filter(r => r.days.length > 0);
+  updateAll();
 }
 
-function acceptReservation(index) {
-    const reservations = JSON.parse(localStorage.getItem("reservations")) || [];
-    reservations[index].status = "accepted";
-    localStorage.setItem("reservations", JSON.stringify(reservations));
-    loadReservations();
+function displayPending(){
+  pendingTable.innerHTML = "";
+  pending.forEach((r,i)=>{
+    pendingTable.innerHTML += `
+      <tr>
+        <td>${r.name}</td>
+        <td>${r.days.join(", ")}</td>
+        <td>${r.type}</td>
+        <td><textarea readonly rows="2">${r.details||""}</textarea></td>
+        <td>
+          <button onclick="accept(${i})">Accept</button>
+          <button onclick="reject(${i})">Reject</button>
+        </td>
+      </tr>`;
+  });
 }
 
-function cancelReservation(index) {
-    const reservations = JSON.parse(localStorage.getItem("reservations")) || [];
-    reservations.splice(index, 1);
-    localStorage.setItem("reservations", JSON.stringify(reservations));
-    loadReservations();
+function displayConfirmed(){
+  confirmedTable.innerHTML = "";
+  confirmed.forEach((r,i)=>{
+    confirmedTable.innerHTML += `
+      <tr>
+        <td>${r.name}</td>
+        <td>${r.days.join(", ")}</td>
+        <td>${r.type}</td>
+        <td><textarea readonly rows="2">${r.details||""}</textarea></td>
+        <td><button onclick="exportCalendar(${i})">Add</button></td>
+        <td><button onclick="cancelAll(${i})">Cancel</button></td>
+      </tr>`;
+  });
 }
+
+function accept(i){
+  confirmed.push(pending[i]);
+  pending.splice(i,1);
+  updateAll();
+}
+function reject(i){
+  pending.splice(i,1);
+  updateAll();
+}
+function cancelAll(i){
+  confirmed.splice(i,1);
+  updateAll();
+}
+
+function exportCalendar(i){
+  const r = confirmed[i];
+  const ics = `BEGIN:VCALENDAR
+VERSION:2.0
+${r.days.map(d=>`BEGIN:VEVENT
+DTSTART;VALUE=DATE:${d.replace(/-/g,"")}
+DTEND;VALUE=DATE:${d.replace(/-/g,"")}
+SUMMARY:${r.type} - ${r.name}
+DESCRIPTION:${r.details||""}
+END:VEVENT`).join("\n")}
+END:VCALENDAR`;
+
+  const a = document.createElement("a");
+  a.href = "data:text/calendar;charset=utf-8," + encodeURIComponent(ics);
+  a.target = "_blank";
+  a.click();
+}
+
+function updateAll(){
+  localStorage.setItem("pendingReservations", JSON.stringify(pending));
+  localStorage.setItem("confirmedReservations", JSON.stringify(confirmed));
+  renderCalendar();
+  displayPending();
+  displayConfirmed();
+}
+
+document.getElementById("prev-month").onclick = () => {
+  currentDate.setMonth(currentDate.getMonth()-1);
+  renderCalendar();
+};
+document.getElementById("next-month").onclick = () => {
+  currentDate.setMonth(currentDate.getMonth()+1);
+  renderCalendar();
+};
+
+window.addEventListener("storage", updateAll);
+
+// ❗ N’APPELLE PAS updateAll() ici, il sera appelé après unlock()
 </script>
+
+</div> <!-- adminApp -->
 
 </body>
 </html>
