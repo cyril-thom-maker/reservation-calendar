@@ -1,79 +1,160 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <title>Reservation</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-
 <style>
-body { font-family: Arial; padding:20px; max-width:600px; margin:auto; }
-input, select, textarea, button {
-  width:100%;
-  padding:10px;
-  margin:5px 0;
-  font-size:16px;
+body {
+    font-family: Arial;
+    margin:0;
+    padding:20px;
+    max-width:700px;
+    margin-left:auto;
+    margin-right:auto;
 }
-button {
-  background:#4CAF50;
-  color:white;
-  border:none;
+h2 { text-align:center; }
+
+#calendar-nav { text-align:center; margin:10px 0; }
+#calendar-days, #calendar {
+    display:grid;
+    grid-template-columns:repeat(7,1fr);
+    text-align:center;
+    gap:5px;
+    margin:auto;
+}
+#calendar .day {
+    aspect-ratio:1/1;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    border-radius:5px;
+    color:white;
+    font-weight:bold;
+    cursor:pointer;
+}
+.day.free { background:#4CAF50; }
+.day.pending { background:#FF9800; }
+.day.confirmed { background:#f44336; }
+.day.selected { background:#2196F3; } /* Bleu pour sélection client */
+
+form {
+    margin-top:20px;
+}
+input, select, textarea, button {
+    width:100%;
+    padding:10px;
+    margin:5px 0;
+    font-size:16px;
+}
+button { background:#4CAF50; color:white; border:none; cursor:pointer; }
+
+@media (min-width:768px){
+    #calendar, #calendar-days { max-width:600px; }
+}
+@media (min-width:1024px){
+    #calendar, #calendar-days { max-width:700px; }
 }
 </style>
 </head>
 <body>
 
-<h2>New Reservation</h2>
+<h2>Reservation Calendar</h2>
 
-<input id="name" placeholder="Your name">
-<select id="type">
-  <option>Workshop day</option>
-  <option>Test day</option>
-  <option>Race day</option>
-</select>
+<div id="calendar-nav">
+  <button id="prev-month">&lt; Prev</button>
+  <span id="month-label"></span>
+  <button id="next-month">Next &gt;</button>
+</div>
 
-<textarea id="details" placeholder="Details"></textarea>
-<input type="date" id="day">
-<button onclick="sendReservation()">Send Reservation</button>
+<div id="calendar-days">
+  <div>Mon</div><div>Tue</div><div>Wed</div>
+  <div>Thu</div><div>Fri</div><div>Sat</div><div>Sun</div>
+</div>
+
+<div id="calendar"></div>
+
+<form id="reservation-form">
+  <input id="name" placeholder="Your name" required>
+  <select id="type">
+    <option>Workshop day</option>
+    <option>Test day</option>
+    <option>Race day</option>
+  </select>
+  <textarea id="details" placeholder="Details (optional)"></textarea>
+  <button type="button" onclick="sendReservation()">Send Reservation</button>
+</form>
 
 <script>
-const { createClient } = supabase;
-const supabaseClient = createClient(
-  "https://cfjagwpyfldoqwqnrnpg.supabase.co",
-  "sb_publishable_5l9E1gSb_0hwx0_ZnFuITQ_AheUZpv7"
-);
+let reservations = JSON.parse(localStorage.getItem("reservations") || "[]");
+let currentDate = new Date();
 
-async function sendReservation() {
-  const name = document.getElementById("name").value;
-  const type = document.getElementById("type").value;
-  const details = document.getElementById("details").value;
-  const day = document.getElementById("day").value;
+function renderCalendar(){
+  const calendarEl = document.getElementById("calendar");
+  calendarEl.innerHTML="";
+  const year = currentDate.getFullYear();
+  const month = currentDate.getMonth();
+  document.getElementById("month-label").textContent = currentDate.toLocaleString("default",{month:"long",year:"numeric"});
 
-  if(!name || !day) {
-    alert("Name and date required");
-    return;
-  }
+  const numDays = new Date(year, month+1,0).getDate();
+  const firstDay = new Date(year, month,1).getDay();
+  const offset = firstDay === 0 ? 6 : firstDay-1; // Monday start
 
-  const { error } = await supabaseClient
-    .from("reservations")
-    .insert([
-      {
-        name,
-        type,
-        details,
-        days: [day],
-        status: "pending"
+  const statusByDate = {};
+  reservations.forEach(r=>r.days.forEach(d=>statusByDate[d]=r.status));
+
+  // Décalage pour aligner le 1er jour
+  for(let i=0;i<offset;i++) calendarEl.appendChild(document.createElement("div"));
+
+  for(let d=1; d<=numDays; d++){
+    const dateStr=`${year}-${String(month+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+    const div=document.createElement("div");
+    div.textContent=d;
+    div.dataset.date=dateStr;
+
+    const status=statusByDate[dateStr] || "free";
+    div.className="day "+status;
+
+    div.onclick=()=>{
+      if(status==="free"){
+        div.classList.toggle("selected");
       }
-    ]);
+    };
 
-  if(error) {
-    alert("Error");
-    console.log(error);
-  } else {
-    alert("Reservation sent!");
+    calendarEl.appendChild(div);
   }
 }
+
+// Navigation mois
+document.getElementById("prev-month").onclick=()=>{
+  currentDate.setMonth(currentDate.getMonth()-1);
+  renderCalendar();
+};
+document.getElementById("next-month").onclick=()=>{
+  currentDate.setMonth(currentDate.getMonth()+1);
+  renderCalendar();
+};
+
+function sendReservation(){
+  const name=document.getElementById("name").value;
+  const type=document.getElementById("type").value;
+  const details=document.getElementById("details").value;
+  const selectedDays=Array.from(document.querySelectorAll('.day.selected')).map(d=>d.dataset.date);
+
+  if(!name || selectedDays.length===0){ alert("Name and at least one day required"); return; }
+
+  reservations.push({ id:Date.now(), name, type, details, days:selectedDays, status:"pending" });
+  localStorage.setItem("reservations", JSON.stringify(reservations));
+
+  alert("Reservation sent!");
+  document.getElementById("name").value="";
+  document.getElementById("details").value="";
+  document.querySelectorAll('.day.selected').forEach(d=>d.classList.remove('selected'));
+  renderCalendar();
+}
+
+renderCalendar();
 </script>
 
 </body>
