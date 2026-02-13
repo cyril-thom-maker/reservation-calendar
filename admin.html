@@ -1,264 +1,78 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
 <meta charset="UTF-8">
-<title>Admin – Reservations</title>
+<title>Admin</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
 <style>
-body { font-family: Arial; padding:20px; background:#f4f4f4; }
-h1 { text-align:center; }
-
-#passwordScreen {
-    position:fixed;
-    top:0; left:0; width:100%; height:100%;
-    display:flex; flex-direction:column; justify-content:center; align-items:center;
-    background:#111; color:white; z-index:1000;
-}
-
-#passwordScreen input { padding:10px; font-size:16px; margin-top:10px; }
-#passwordScreen button { margin-top:10px; padding:10px 20px; cursor:pointer; }
-
-#calendar-nav { text-align:center; margin-bottom:10px; }
-#calendar-days {
-  display:grid;
-  grid-template-columns:repeat(7,1fr);
-  max-width:420px;
-  margin:0 auto;
-  font-weight:bold;
-  text-align:center;
-}
-#calendar {
-  display:grid;
-  grid-template-columns:repeat(7,1fr);
-  max-width:420px;
-  margin:0 auto;
-  gap:5px;
-}
-
-.day {
-  aspect-ratio:1/1;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  border-radius:5px;
-  color:white;
-  font-weight:bold;
-}
-
-.day.free { background:#4CAF50; }
-.day.pending { background:#FF9800; }
-.day.confirmed { background:#f44336; cursor:pointer; }
-
-table {
-  width:100%;
-  border-collapse: collapse;
-  margin-top:20px;
-}
-th, td {
+body { font-family: Arial; padding:20px; max-width:800px; margin:auto; }
+.card {
   border:1px solid #ccc;
-  padding:6px;
-  text-align:center;
+  padding:10px;
+  margin-bottom:10px;
 }
-th { background:#eee; }
-
-button { padding:4px 8px; margin:2px; }
-textarea { width:95%; resize:none; }
-
-#adminApp { display:none; }
+.pending { background:#FF9800; color:white; }
+.confirmed { background:#f44336; color:white; }
+button { margin:5px; padding:5px 10px; }
 </style>
 </head>
 <body>
 
-<!-- 🔐 PASSWORD SCREEN -->
-<div id="passwordScreen">
-  <h2>Admin Access</h2>
-  <input type="password" id="passwordInput" placeholder="Enter password">
-  <button onclick="unlock()">Login</button>
-  <p id="error" style="color:red;"></p>
-</div>
-
-<!-- ✅ ADMIN APP (tout ton code inchangé) -->
-<div id="adminApp">
-
-<h1>Admin Reservation Management</h1>
-
-<div id="calendar-nav">
-  <button id="prev-month">&lt; Previous</button>
-  <span id="month-label"></span>
-  <button id="next-month">Next &gt;</button>
-</div>
-
-<div id="calendar-days">
-  <div>Mon</div><div>Tue</div><div>Wed</div>
-  <div>Thu</div><div>Fri</div><div>Sat</div><div>Sun</div>
-</div>
-
-<div id="calendar"></div>
-
-<h2>Pending Reservations</h2>
-<table>
-  <thead>
-    <tr><th>Client</th><th>Days</th><th>Type</th><th>Details</th><th>Action</th></tr>
-  </thead>
-  <tbody id="pending-table"></tbody>
-</table>
-
-<h2>Confirmed Reservations</h2>
-<table>
-  <thead>
-    <tr><th>Client</th><th>Days</th><th>Type</th><th>Details</th><th>Calendar</th><th>Cancel</th></tr>
-  </thead>
-  <tbody id="confirmed-table"></tbody>
-</table>
+<h2>Admin Panel</h2>
+<div id="list"></div>
 
 <script>
-/* ===== MOT DE PASSE ===== */
-const ADMIN_PASSWORD = "ad"; // 🔴 change ici si tu veux
+const { createClient } = supabase;
+const supabaseClient = createClient(
+  "https://cfjagwpyfldoqwqnrnpg.supabase.co",
+  "sb_publishable_5l9E1gSb_0hwx0_ZnFuITQ_AheUZpv7"
+);
 
-function unlock() {
-  const val = document.getElementById("passwordInput").value;
-  if(val === ADMIN_PASSWORD){
-    document.getElementById("passwordScreen").style.display = "none";
-    document.getElementById("adminApp").style.display = "block";
-    updateAll(); // initialisation calendrier et tableaux
-  } else {
-    document.getElementById("error").innerText = "Wrong password";
-  }
-}
+async function loadReservations() {
+  const { data } = await supabaseClient
+    .from("reservations")
+    .select("*")
+    .order("created_at", { ascending: false });
 
-/* ===== TON CODE EXISTANT ===== */
-let pending = JSON.parse(localStorage.getItem("pendingReservations") || "[]");
-let confirmed = JSON.parse(localStorage.getItem("confirmedReservations") || "[]");
-let currentDate = new Date();
+  const list = document.getElementById("list");
+  list.innerHTML = "";
 
-const calendarEl = document.getElementById("calendar");
-const monthLabel = document.getElementById("month-label");
-const pendingTable = document.getElementById("pending-table");
-const confirmedTable = document.getElementById("confirmed-table");
-
-function renderCalendar(){
-  calendarEl.innerHTML = "";
-  const year = currentDate.getFullYear();
-  const month = currentDate.getMonth();
-  monthLabel.textContent = currentDate.toLocaleString("default",{month:"long",year:"numeric"});
-
-  const numDays = new Date(year, month+1, 0).getDate();
-  const firstDay = new Date(year, month, 1).getDay();
-  const offset = firstDay === 0 ? 6 : firstDay - 1;
-
-  const statusByDate = {};
-  confirmed.forEach(r => r.days.forEach(d => statusByDate[d] = "confirmed"));
-  pending.forEach(r => r.days.forEach(d => { if(!statusByDate[d]) statusByDate[d] = "pending"; }));
-
-  for(let i=0;i<offset;i++){ calendarEl.appendChild(document.createElement("div")); }
-
-  for(let d=1; d<=numDays; d++){
-    const dateStr = `${year}-${String(month+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+  data.forEach(r => {
     const div = document.createElement("div");
-    div.textContent = d;
-    div.className = "day " + (statusByDate[dateStr] || "free");
-
-    if(statusByDate[dateStr] === "confirmed"){
-      div.onclick = () => { if(confirm(`Cancel this day?\n${dateStr}`)){ cancelSingleDay(dateStr); } }
-    }
-
-    calendarEl.appendChild(div);
-  }
-}
-
-function cancelSingleDay(dateStr){
-  confirmed = confirmed
-    .map(r => ({...r, days: r.days.filter(d => d !== dateStr)}))
-    .filter(r => r.days.length > 0);
-  updateAll();
-}
-
-function displayPending(){
-  pendingTable.innerHTML = "";
-  pending.forEach((r,i)=>{
-    pendingTable.innerHTML += `
-      <tr>
-        <td>${r.name}</td>
-        <td>${r.days.join(", ")}</td>
-        <td>${r.type}</td>
-        <td><textarea readonly rows="2">${r.details||""}</textarea></td>
-        <td>
-          <button onclick="accept(${i})">Accept</button>
-          <button onclick="reject(${i})">Reject</button>
-        </td>
-      </tr>`;
+    div.className = "card " + r.status;
+    div.innerHTML = `
+      <strong>${r.name}</strong><br>
+      ${r.type}<br>
+      ${r.days.join(", ")}<br>
+      ${r.details}<br>
+      <button onclick="confirmReservation('${r.id}')">Confirm</button>
+    `;
+    list.appendChild(div);
   });
 }
 
-function displayConfirmed(){
-  confirmedTable.innerHTML = "";
-  confirmed.forEach((r,i)=>{
-    confirmedTable.innerHTML += `
-      <tr>
-        <td>${r.name}</td>
-        <td>${r.days.join(", ")}</td>
-        <td>${r.type}</td>
-        <td><textarea readonly rows="2">${r.details||""}</textarea></td>
-        <td><button onclick="exportCalendar(${i})">Add</button></td>
-        <td><button onclick="cancelAll(${i})">Cancel</button></td>
-      </tr>`;
-  });
+async function confirmReservation(id) {
+  await supabaseClient
+    .from("reservations")
+    .update({ status: "confirmed" })
+    .eq("id", id);
+
+  loadReservations();
 }
 
-function accept(i){
-  confirmed.push(pending[i]);
-  pending.splice(i,1);
-  updateAll();
-}
-function reject(i){
-  pending.splice(i,1);
-  updateAll();
-}
-function cancelAll(i){
-  confirmed.splice(i,1);
-  updateAll();
-}
+loadReservations();
 
-function exportCalendar(i){
-  const r = confirmed[i];
-  const ics = `BEGIN:VCALENDAR
-VERSION:2.0
-${r.days.map(d=>`BEGIN:VEVENT
-DTSTART;VALUE=DATE:${d.replace(/-/g,"")}
-DTEND;VALUE=DATE:${d.replace(/-/g,"")}
-SUMMARY:${r.type} - ${r.name}
-DESCRIPTION:${r.details||""}
-END:VEVENT`).join("\n")}
-END:VCALENDAR`;
-
-  const a = document.createElement("a");
-  a.href = "data:text/calendar;charset=utf-8," + encodeURIComponent(ics);
-  a.target = "_blank";
-  a.click();
-}
-
-function updateAll(){
-  localStorage.setItem("pendingReservations", JSON.stringify(pending));
-  localStorage.setItem("confirmedReservations", JSON.stringify(confirmed));
-  renderCalendar();
-  displayPending();
-  displayConfirmed();
-}
-
-document.getElementById("prev-month").onclick = () => {
-  currentDate.setMonth(currentDate.getMonth()-1);
-  renderCalendar();
-};
-document.getElementById("next-month").onclick = () => {
-  currentDate.setMonth(currentDate.getMonth()+1);
-  renderCalendar();
-};
-
-window.addEventListener("storage", updateAll);
-
-// ❗ N’APPELLE PAS updateAll() ici, il sera appelé après unlock()
+supabaseClient
+  .channel('realtime')
+  .on('postgres_changes', 
+      { event: '*', schema: 'public', table: 'reservations' },
+      () => loadReservations()
+  )
+  .subscribe();
 </script>
-
-</div> <!-- adminApp -->
 
 </body>
 </html>
